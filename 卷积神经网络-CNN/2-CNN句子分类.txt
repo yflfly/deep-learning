@@ -1,1 +1,108 @@
 句子分类：是指将给定句子划分为某一类别
+
+网络模型
+
+class TextCNN(object):
+    """文本分类，CNN模型"""
+
+    def __init__(self, config):
+        self.config = config
+        # 三个待输入的数据
+        self.input_x = tf.placeholder(tf.int32, [None, self.config.seq_length], name='input_x')  # seq_length :文本的长度
+        self.input_y = tf.placeholder(tf.float32, [None, self.config.num_classes], name='input_y')  # num_classes 标签的数量
+        self.keep_prob = tf.placeholder(tf.float32, name='keep_prob')
+        self.cnn()
+
+    def cnn(self):
+        """CNN模型"""
+        # 词向量映射
+        with tf.device('/cpu:0'):
+            # 下面是输入的向量时随机进行初始化的
+            embedding = tf.get_variable('embedding', [self.config.vocab_size, self.config.embedding_dim])  # 词向量的初始值为随机值
+            # print('embedding',embedding) # embedding <tf.Variable 'embedding:0' shape=(2426, 100) dtype=float32_ref>
+            embedding_inputs = tf.nn.embedding_lookup(embedding, self.input_x)
+            #
+            # 下面是使用训练好的字向量进行训练
+            # embed = tf.Variable(initial_value=self.config.embedding, dtype=tf.float32)
+            # print('self.config.embedding', embed)
+            # embedding_inputs = tf.nn.embedding_lookup(embed, self.input_x)
+
+        # print('self.input_x',self.input_x)  ##Tensor("input_x:0", shape=(?, 600), dtype=int32)
+        with tf.name_scope("cnn"):
+            # CNN layer
+            conv = tf.layers.conv1d(embedding_inputs, self.config.num_filters, self.config.kernel_size,
+                                    name='conv')  # 256,5
+            # print('embedding_inputs',embedding_inputs) # Tensor("embedding_lookup:0", shape=(?, 600, 100), dtype=float32, device=/device:CPU:0)
+            # print('conv',conv)  # Tensor("cnn/conv/BiasAdd:0", shape=(?, 596, 256), dtype=float32)  596 = 600-5+1
+            # global max pooling layer
+            gmp = tf.reduce_max(conv, reduction_indices=[1], name='gmp')  # 取最大值 是在第二维上进行最大值的取出
+            # print('gmp',gmp)# Tensor("cnn/gmp:0", shape=(?, 256), dtype=float32)
+
+        with tf.name_scope("score"):
+            # 全连接层，后面接dropout以及relu激活
+            fc = tf.layers.dense(gmp, self.config.hidden_dim, name='fc1')
+            fc = tf.contrib.layers.dropout(fc, self.keep_prob)
+            fc = tf.nn.relu(fc)
+
+            # 分类器
+            self.logits = tf.layers.dense(fc, self.config.num_classes, name='fc2')
+            # print('self.logits',self.logits) #self.logits Tensor("score/fc2/BiasAdd:0", shape=(?, 3), dtype=float32)
+            self.y_pred_cls = tf.argmax(tf.nn.softmax(self.logits), 1)  # 预测类别
+
+        with tf.name_scope("optimize"):
+            # 损失函数，交叉熵
+            cross_entropy = tf.nn.softmax_cross_entropy_with_logits(logits=self.logits, labels=self.input_y)  # 返回的是一个向量
+            # print('cross_entropy',cross_entropy) #cross_entropy Tensor("optimize/Reshape_2:0", shape=(?,), dtype=float32)
+            self.loss = tf.reduce_mean(cross_entropy)  # 对向量求均值，计算loss 损失函数
+            '''
+            ，logits是作为softmax的输入。经过softmax的加工，就变成“归一化”的概率（设为q），然后和labels代表的概率分布（设为q），于是，整个函数的功能就是前面的计算labels（概率分布p）和logits（概率分布q）之间的交叉熵
+            '''
+            # 优化器
+            self.optim = tf.train.AdamOptimizer(learning_rate=self.config.learning_rate).minimize(self.loss)
+
+        with tf.name_scope("accuracy"):
+            # 准确率
+            correct_pred = tf.equal(tf.argmax(self.input_y, 1), self.y_pred_cls)  # bool型
+            self.acc = tf.reduce_mean(tf.cast(correct_pred, tf.float32))  # 数据类型的转换，同时进行计算准确率
+
+
+'''
+CNN网络：
+代码中的卷积神经网络是最基本的网络，有input layer、convolutional layer、max-pooling layer以及最后的输出的softmax layer
+(1)input layer层
+使用随机初始化的embedding作为输入层输入的信息
+embedding = tf.get_variable('embedding', [self.config.vocab_size, self.config.embedding_dim]) # 词向量的初始值为随机值
+embedding_inputs = tf.nn.embedding_lookup(embedding, self.input_x)
+此时的输入的shape为：shape=(?, 600, 100)
+(2)convolutional layer层
+conv = tf.layers.conv1d(embedding_inputs, self.config.num_filters, self.config.kernel_size, name='conv')
+参数的大小：
+embedding_inputs：shape=(?, 600, 100)
+self.config.num_filters：256  卷积核数目  卷积出的最后一个维度  256个卷积核
+self.config.kernel_size：5  卷积核尺寸 一维卷积窗口大大小
+
+输出的维度大小：
+shape=(?, 596, 256)
+其中596 = 600-5+1
+256个卷积核的初始化的大小是随机的，所以对句子进行256个卷积结果是不同的，即使初始化卷积核的大小都是一样的，但是根据标签进行调参时，也会将卷积核矩阵中的内容进行训练修改，此时的卷积核矩阵中的数据相当于传统神经网络的权重参数W
+对句子中的每一个字的向量的每一维度都进行参数的学习
+tf.layers.conv1d()功能：
+生成卷积核，对输入层进行卷积，产生输出的tensor
+(3)max-pooling layer层
+gmp = tf.reduce_max(conv, reduction_indices=[1], name='gmp') # 取最大值 是在第二维上进行最大值的取出
+print('gmp',gmp)##Tensor("cnn/gmp:0", shape=(?, 256), dtype=float32)
+
+(4)softmax layer层
+# 全连接层，后面接dropout以及relu激活
+fc = tf.layers.dense(gmp, self.config.hidden_dim, name='fc1')
+fc = tf.contrib.layers.dropout(fc, self.keep_prob)
+fc = tf.nn.relu(fc)
+
+# 分类器
+self.logits = tf.layers.dense(fc, self.config.num_classes, name='fc2')
+print('self.logits',self.logits) #self.logits Tensor("score/fc2/BiasAdd:0", shape=(?, 3), dtype=float32)
+self.y_pred_cls = tf.argmax(tf.nn.softmax(self.logits), 1)  # 预测类别
+
+
+在自然语言处理中，我们假设一个序列是600个单词，每个单词的词向量是300维，那么一个序列输入到网络中就是（600,300），当我使用Conv1D进行卷积的时候，实际上就完成了直接在序列上的卷积，卷积的时候实际是以（3,300）进行卷积，又因为每一行都是一个词向量，因此使用Conv1D（kernel_size=3）也就相当于使用神经网络进行了n_gram=3的特征提取了。这也是为什么使用卷积神经网络处理文本会非常快速有效的内涵。
+'''
