@@ -14,5 +14,20 @@ TensorFlow非常善于创建一个包含所有依赖关系和操作的计算图�
 3）初始值
 4）名称（可选）
 
+数据类型在决定变量大小方面起着重要作用。有许多不同的数据类型，包括常用的tf.bool、tf.uint8、tf.float32和tf.int32。每种数据类型都需要一定的比特数来表示该类型的值。例如，tf.uint8需要8比特，而tf.float32需要32比特。通常的做法是使用相同的数据类型进行计算，否则会导致数据类型不匹配。因此，如果你有两个不同数据类型的张量，则需要对它们做数据类型转换，因而必须使用tf.cast（…）操作将一个张量显式转换为另一个类型的张量。tf.cast（…）操作就是为了应对这种情况而设计的。例如，如果有一个tf.int32类型的x变量，需要将其转换为tf.float32，则可以通过tf.cast（x, dtype = tf.float32）将x转换为tf.float32。
+
+变量需要用初始值进行初始化。为方便起见，TensorFlow提供了几种不同的初始化器，包括常数初始化器和正态分布初始化器。以下是一些可用于初始化变量的流行TensorFlow初始化器：
+
+● tf.zeros
+● tf.constant_initializer
+● tf.random_uniform
+● tf.truncated_normal
+
+最后，我们会将变量的名称用作ID在图中标识该变量。因此，如果你可视化计算图，那么变量将显示为传递给name关键字的参数。如果未指定名称，TensorFlow将使用默认命名方案。
+
+神经网络中两种常用的非线性激活：
+tf.nn.sigmoid(x,name=None)
+tf.nn.relu(x,name=None)
+
 
 
